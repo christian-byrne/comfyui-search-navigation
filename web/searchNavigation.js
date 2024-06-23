@@ -3,6 +3,11 @@ import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 import { ComfyDialog } from "../../scripts/ui/dialog.js";
 
+const NAV_WIDTH = 80;
+const OPEN_SEARCH_HOTKEY = "F";
+const UNDO_HOTKEY = "ArrowLeft";
+const REDO_HOTKEY = "ArrowRight";
+
 export class SearchNavigation extends ComfyDialog {
   constructor(app) {
     super();
@@ -21,23 +26,23 @@ export class SearchNavigation extends ComfyDialog {
         parent: document.body,
         onkeydown: (e) => {
           if (e.key === "Enter") {
-            this.executeSearch();
+            this.enterHandler();
           } else if (e.key === "ArrowDown") {
             this.incrementSelectedResultIndex(1);
           } else if (e.key === "ArrowUp") {
             this.incrementSelectedResultIndex(-1);
-          } else if (e.shiftKey && e.key === "ArrowLeft") {
+          } else if (e.shiftKey && e.key === UNDO_HOTKEY) {
             this.undo();
-          } else if (e.shiftKey && e.key === "ArrowRight") {
+          } else if (e.shiftKey && e.key === REDO_HOTKEY) {
             this.redo();
           }
         },
         style: {
           position: "fixed",
           top: "0",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "80vw",
+          left: "0",
+          transform: "translateX(-50%) translateY(-100%)",
+          width: `${NAV_WIDTH}vw`,
           // Default background color with increased elevation.
           backgroundColor: "rgba(53, 53, 53, .48)",
           boxShadow:
@@ -48,6 +53,7 @@ export class SearchNavigation extends ComfyDialog {
           zIndex: 1000,
           fontSize: "30px",
           padding: ".8rem",
+          transition: "transform 0.3s ease, opacity 0.3 ease", // Slide in/out transition.
         },
       },
       [
@@ -66,7 +72,7 @@ export class SearchNavigation extends ComfyDialog {
           $el("input", {
             type: "text",
             id: "searchInput",
-            placeholder: "Search...",
+            placeholder: "Search Nodes...",
             style: {
               marginBottom: ".5rem",
             },
@@ -82,34 +88,65 @@ export class SearchNavigation extends ComfyDialog {
     );
 
     window.addEventListener("keyup", (e) => {
-      // Hotkey to open the element: Shift + F
-      // if (e.ctrlKey && e.shiftKey && e.key === "F") {
-      if (e.shiftKey && e.key === "F") {
+      if (e.shiftKey && e.key === OPEN_SEARCH_HOTKEY) {
         this.show();
       }
     });
   }
 
-  incrementSelectedResultIndex(increment) {
-    let newIndex = this.selectedResultIndex + increment;
-    if (newIndex >= this.currentResults.length) {
-      newIndex = 0;
-    }
-    if (newIndex < 0) {
-      newIndex = this.currentResults.length - 1;
-    }
-    this.selectedResultIndex = newIndex;
-    this.renderSearchResults();
+  getGraphState() {
+    const curState = this.app.graph.serialize();
+    this.curOffset = curState.extra.ds.offset;
+    this.curScale = curState.extra.ds.scale;
+    return curState;
   }
 
-  executeSearch() {
-    if (this.currentResults.length > 0) {
-      if (this.selectedResultIndex >= this.currentResults.length) {
-        this.selectedResultIndex = this.currentResults.length - 1;
-      }
-      this.centerViewOnNode(this.currentResults[this.selectedResultIndex]);
-      this.clearSearchInput();
+  undo() {
+    if (this.undoStack.length > 0) {
+      const lastOffset = this.undoStack.pop();
+      const graphState = this.getGraphState();
+      const curOffset = graphState.extra.ds.offset;
+      this.redoStack.push(JSON.parse(JSON.stringify(curOffset)));
+      this.setView(lastOffset, graphState, false);
     }
+  }
+
+  redo() {
+    if (this.redoStack.length > 0) {
+      const lastOffset = this.redoStack.pop();
+      const graphState = this.getGraphState();
+      const curOffset = graphState.extra.ds.offset;
+      this.undoStack.push(JSON.parse(JSON.stringify(curOffset)));
+      this.setView(lastOffset, graphState, false);
+    }
+  }
+
+  setView(offset, curGraphState, addToUndoStack = true) {
+    if (this.curOffset === offset) {
+      return;
+    }
+    curGraphState.extra.ds.offset = offset;
+    let clone = JSON.parse(JSON.stringify(curGraphState));
+    if (addToUndoStack) {
+      this.undoStack.push(this.curOffset);
+    }
+    api.dispatchEvent(new CustomEvent("graphChanged", { detail: clone }));
+    this.app.loadGraphData(clone, false);
+  }
+  centerViewOnNode(node) {
+    const graph = this.getGraphState();
+    const [nodePosX, nodePosY] = node.pos;
+    const [nodeSizeX, nodeSizeY] = node.size;
+
+    const canvasCenterX = window.innerWidth / 2;
+    const canvasCenterY = window.innerHeight / 2;
+
+    const nodeCenterX = nodePosX + nodeSizeX / 2;
+    const nodeCenterY = nodePosY + nodeSizeY / 2;
+
+    const newOffsetX = canvasCenterX / this.curScale - nodeCenterX;
+    const newOffsetY = canvasCenterY / this.curScale - nodeCenterY;
+    this.setView([newOffsetX, newOffsetY], graph);
   }
 
   renderSearchResults() {
@@ -129,6 +166,16 @@ export class SearchNavigation extends ComfyDialog {
     });
   }
 
+  enterHandler() {
+    if (this.currentResults.length > 0) {
+      if (this.selectedResultIndex >= this.currentResults.length) {
+        this.selectedResultIndex = this.currentResults.length - 1;
+      }
+      this.centerViewOnNode(this.currentResults[this.selectedResultIndex]);
+      this.clearSearchInput();
+    }
+  }
+
   getId(id) {
     if (this.app.storageLocation === "browser") {
       id = "Comfy.SearchNavigation." + id;
@@ -136,59 +183,16 @@ export class SearchNavigation extends ComfyDialog {
     return id;
   }
 
-  getGraphState() {
-    const curState = this.app.graph.serialize();
-    this.curOffset = curState.extra.ds.offset;
-    this.curScale = curState.extra.ds.scale;
-    return curState;
-  }
-
-  undo() {
-    if (this.undoStack.length > 0) {
-      const lastOffset = this.undoStack.pop();
-      const graphState = this.getGraphState();
-      const curOffset = graphState.extra.ds.offset;
-      this.redoStack.push(JSON.parse(JSON.stringify(curOffset)));
-      this.setView(lastOffset, graphState);
+  incrementSelectedResultIndex(increment) {
+    let newIndex = this.selectedResultIndex + increment;
+    if (newIndex >= this.currentResults.length) {
+      newIndex = 0;
     }
-  }
-
-  redo() {
-    if (this.redoStack.length > 0) {
-      const lastOffset = this.redoStack.pop();
-      const graphState = this.getGraphState();
-      const curOffset = graphState.extra.ds.offset;
-      this.undoStack.push(JSON.parse(JSON.stringify(curOffset)));
-      this.setView(lastOffset, graphState);
+    if (newIndex < 0) {
+      newIndex = this.currentResults.length - 1;
     }
-  }
-
-  setView(offset, curGraphState) {
-    if (this.curOffset === offset) {
-      return;
-    }
-    curGraphState.extra.ds.offset = offset;
-    let clone = JSON.parse(JSON.stringify(curGraphState));
-    this.undoStack.push(this.curOffset);
-    // localStorage.setItem("workflow", JSON.stringify(graph));
-    api.dispatchEvent(new CustomEvent("graphChanged", { detail: clone }));
-    this.app.loadGraphData(clone, false);
-  }
-
-  centerViewOnNode(node) {
-    const graph = this.getGraphState();
-    const [nodePosX, nodePosY] = node.pos;
-    const [nodeSizeX, nodeSizeY] = node.size;
-
-    const canvasCenterX = window.innerWidth / 2;
-    const canvasCenterY = window.innerHeight / 2;
-
-    const nodeCenterX = nodePosX + nodeSizeX / 2;
-    const nodeCenterY = nodePosY + nodeSizeY / 2;
-
-    const newOffsetX = canvasCenterX / this.curScale - nodeCenterX;
-    const newOffsetY = canvasCenterY / this.curScale - nodeCenterY;
-    this.setView([newOffsetX, newOffsetY], graph);
+    this.selectedResultIndex = newIndex;
+    this.renderSearchResults();
   }
 
   searchNodes(searchText) {
@@ -237,8 +241,10 @@ export class SearchNavigation extends ComfyDialog {
 
   show() {
     if (this.visible) {
+      this.element.classList.remove("search-navigation-show");
       this.element.close();
     } else {
+      this.element.classList.add("search-navigation-show");
       this.element.show();
       this.focusSearchInput();
     }
@@ -249,8 +255,31 @@ export class SearchNavigation extends ComfyDialog {
 const SearchNavgiationExtension = {
   name: "searchNavigation",
   init: async (app) => {
+    document.head.appendChild(
+      $el("style", {
+        textContent: `
+          @keyframes slideDown {
+            from {
+              transform: translateY(-100%);
+              opacity: 0;
+            }
+            to {
+              transform: translateY(0);
+              opacity: 1;
+            }
+          }
+
+          .search-navigation-show {
+            display: flex;
+            animation: slideDown 0.2s forwards;
+          }
+        `,
+      })
+    );
+
     ComfyUI.searchNavigation = new SearchNavigation(app);
-    ComfyUI.searchNavigation.show();
+    // If showing the search nav on load:
+    // ComfyUI.searchNavigation.show();
   },
 };
 
