@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-search-navigation"
-description = "Search navigation extension."
+description = "Navigate workflows faster using keyboard. Shift+F to open/close. Shift+Left/Right to cycle through search history."
 version = "1.0.0"
 license = "LICENSE"
 
@@ -9,6 +9,6 @@ Repository = "https://github.com/christian-byrne/comfyui-search-navigation"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "christian-byrne"
 DisplayName = "comfyui-search-navigation"
-Icon = ""
+Icon = "https://img.icons8.com/?size=100&id=112468&format=png&color=000000"
