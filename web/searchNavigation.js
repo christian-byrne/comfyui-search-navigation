@@ -8,6 +8,7 @@ const OPEN_SEARCH_HOTKEY = "F";
 const UNDO_HOTKEY = "ArrowLeft";
 const REDO_HOTKEY = "ArrowRight";
 const SHOW_ON_LOAD = false;
+const ALLOW_EMPTY_SEARCH = false;
 
 export class SearchNavigation extends ComfyDialog {
   constructor(app) {
@@ -19,6 +20,7 @@ export class SearchNavigation extends ComfyDialog {
     this.undoStack = [];
     this.redoStack = [];
     this.visible = false;
+    this.undoRedoListenerRef = null;
     this.element = $el(
       "dialog",
       {
@@ -28,9 +30,9 @@ export class SearchNavigation extends ComfyDialog {
           if (e.key === "Enter") {
             this.enterHandler();
           } else if (e.key === "ArrowDown") {
-            this.incrementSelectedResultIndex(1);
+            this.incrementSelectionIndex(1);
           } else if (e.key === "ArrowUp") {
-            this.incrementSelectedResultIndex(-1);
+            this.incrementSelectionIndex(-1);
           }
         },
         style: {
@@ -180,7 +182,7 @@ export class SearchNavigation extends ComfyDialog {
     return id;
   }
 
-  incrementSelectedResultIndex(increment) {
+  incrementSelectionIndex(increment) {
     let newIndex = this.selectedResultIndex + increment;
     if (newIndex >= this.currentResults.length) {
       newIndex = 0;
@@ -193,6 +195,11 @@ export class SearchNavigation extends ComfyDialog {
   }
 
   searchNodes(searchText) {
+    if (searchText === "" && !ALLOW_EMPTY_SEARCH) {
+      this.currentResults = [];
+      return;
+    }
+
     searchText = searchText.toLowerCase();
     const graph = this.getGraphState();
     const nodes = graph.nodes;
@@ -249,7 +256,7 @@ export class SearchNavigation extends ComfyDialog {
   addUndoRedoHotkeyListeners() {
     // Ensure we remove any existing listener before adding a new one.
     if (this.undoRedoListenerRef) {
-      this.removeUndoRedoHotkeyListeners(); 
+      this.removeUndoRedoHotkeyListeners();
     }
 
     const listener = this.undoRedoListener.bind(this);
@@ -274,6 +281,8 @@ export class SearchNavigation extends ComfyDialog {
       this.element.show();
       this.addUndoRedoHotkeyListeners(); // Add listeners when shown
       this.focusSearchInput();
+      // Clear existing search results when shown.
+      this.clearSearchInput();
     }
     this.visible = !this.visible;
   }
