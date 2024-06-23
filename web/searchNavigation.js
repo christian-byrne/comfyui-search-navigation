@@ -7,6 +7,7 @@ const NAV_WIDTH = 80;
 const OPEN_SEARCH_HOTKEY = "F";
 const UNDO_HOTKEY = "ArrowLeft";
 const REDO_HOTKEY = "ArrowRight";
+const SHOW_ON_LOAD = false;
 
 export class SearchNavigation extends ComfyDialog {
   constructor(app) {
@@ -65,7 +66,7 @@ export class SearchNavigation extends ComfyDialog {
               type: "button",
               textContent: "\u00d7",
               onclick: () => {
-                this.element.close();
+                this.show();
               },
             })
           ),
@@ -258,7 +259,7 @@ const SearchNavgiationExtension = {
     document.head.appendChild(
       $el("style", {
         textContent: `
-          @keyframes slideDown {
+          @keyframes searchNavSlideDown {
             from {
               transform: translateY(-100%);
               opacity: 0;
@@ -271,15 +272,16 @@ const SearchNavgiationExtension = {
 
           .search-navigation-show {
             display: flex;
-            animation: slideDown 0.2s forwards;
+            animation: searchNavSlideDown 0.2s forwards;
           }
         `,
       })
     );
 
     ComfyUI.searchNavigation = new SearchNavigation(app);
-    // If showing the search nav on load:
-    // ComfyUI.searchNavigation.show();
+    if (SHOW_ON_LOAD) {
+      ComfyUI.searchNavigation.show();
+    }
   },
 };
 
