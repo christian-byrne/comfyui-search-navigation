@@ -19,7 +19,6 @@ export class SearchNavigation extends ComfyDialog {
     this.undoStack = [];
     this.redoStack = [];
     this.visible = false;
-
     this.element = $el(
       "dialog",
       {
@@ -32,10 +31,6 @@ export class SearchNavigation extends ComfyDialog {
             this.incrementSelectedResultIndex(1);
           } else if (e.key === "ArrowUp") {
             this.incrementSelectedResultIndex(-1);
-          } else if (e.shiftKey && e.key === UNDO_HOTKEY) {
-            this.undo();
-          } else if (e.shiftKey && e.key === REDO_HOTKEY) {
-            this.redo();
           }
         },
         style: {
@@ -93,6 +88,7 @@ export class SearchNavigation extends ComfyDialog {
         this.show();
       }
     });
+    this.undoRedoListeners = this.addUndoRedoHotkeyListeners();
   }
 
   getGraphState() {
@@ -240,13 +236,43 @@ export class SearchNavigation extends ComfyDialog {
     this.getSearchInputEl().focus();
   }
 
+  undoRedoListener(e) {
+    if (!this.visible) return;
+
+    if (e.shiftKey && e.key === UNDO_HOTKEY) {
+      this.undo();
+    } else if (e.shiftKey && e.key === REDO_HOTKEY) {
+      this.redo();
+    }
+  }
+
+  addUndoRedoHotkeyListeners() {
+    // Ensure we remove any existing listener before adding a new one.
+    if (this.undoRedoListenerRef) {
+      this.removeUndoRedoHotkeyListeners(); 
+    }
+
+    const listener = this.undoRedoListener.bind(this);
+    window.addEventListener("keyup", listener);
+    this.undoRedoListenerRef = listener; // Store the bound listener reference
+  }
+
+  removeUndoRedoHotkeyListeners() {
+    if (this.undoRedoListenerRef) {
+      window.removeEventListener("keyup", this.undoRedoListenerRef);
+      this.undoRedoListenerRef = null;
+    }
+  }
+
   show() {
     if (this.visible) {
       this.element.classList.remove("search-navigation-show");
       this.element.close();
+      this.removeUndoRedoHotkeyListeners(); // Remove listeners when hidden
     } else {
       this.element.classList.add("search-navigation-show");
       this.element.show();
+      this.addUndoRedoHotkeyListeners(); // Add listeners when shown
       this.focusSearchInput();
     }
     this.visible = !this.visible;
