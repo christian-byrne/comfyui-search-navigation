@@ -7,6 +7,7 @@ const NAV_WIDTH = 80;
 const OPEN_SEARCH_HOTKEY = "F";
 const UNDO_HOTKEY = "ArrowLeft";
 const REDO_HOTKEY = "ArrowRight";
+const FOCUS_SEARCH_INPUT_HOTKEY = "?";
 const SHOW_ON_LOAD = false;
 const ALLOW_EMPTY_SEARCH = false;
 
@@ -89,8 +90,11 @@ export class SearchNavigation extends ComfyDialog {
       if (e.shiftKey && e.key === OPEN_SEARCH_HOTKEY) {
         this.show();
       }
+      else if (this.visible && e.shiftKey && e.key === FOCUS_SEARCH_INPUT_HOTKEY) {
+        console.log("focus search input");
+        this.focusSearchInput();
+      }
     });
-    this.undoRedoListeners = this.addUndoRedoHotkeyListeners();
   }
 
   getGraphState() {
