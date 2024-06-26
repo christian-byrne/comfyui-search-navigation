@@ -1,4 +1,6 @@
 
+![demo pic](./wiki/demo/s.png)
+
 ![demo video](./wiki/demo/demo.gif)
 
 # Usage
@@ -8,6 +10,7 @@
 3. `Enter` to center view on selected node
 4. `Shift + Left/Right` to cycle through navigation history
 5. `?` to re-focus search bar after doing other things
+6. Open settings ⚙ to change hotkeys and other settings
 
 # Installation
 

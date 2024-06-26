@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-search-navigation"
 description = "Navigate workflows faster using keyboard. Shift+F to open/close. Shift+Left/Right to cycle through search history."
-version = "1.0.0"
+version = "1.1.0"
 license = "LICENSE"
 
 [project.urls]

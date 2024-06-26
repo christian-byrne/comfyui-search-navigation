@@ -3,21 +3,26 @@ import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 import { ComfyDialog } from "../../scripts/ui/dialog.js";
 
-const NAV_WIDTH = 80;
-const OPEN_SEARCH_HOTKEY = "F";
-const UNDO_HOTKEY = "ArrowLeft";
-const REDO_HOTKEY = "ArrowRight";
-const FOCUS_SEARCH_INPUT_HOTKEY = "?";
 const SHOW_ON_LOAD = false;
-const ALLOW_EMPTY_SEARCH = false;
-
+// Based on https://github.com/comfyanonymous/ComfyUI/blob/master/web/scripts/ui/settings.js
 export class SearchNavigation extends ComfyDialog {
   constructor(app) {
     super();
     this.app = app;
+    this.config = {
+      NAV_WIDTH: 50,
+      OPEN_SEARCH_HOTKEY: "shift+F",
+      UNDO_HOTKEY: "ArrowLeft",
+      REDO_HOTKEY: "ArrowRight",
+      UNDOREDO_NAVIGATION_WHEN_CLOSED: false,
+      SHOW_NODE_IDS: true,
+      FOCUS_SEARCH_INPUT_HOTKEY: "shift+?",
+      ALLOW_EMPTY_SEARCH: false,
+    };
     this.selectedResultIndex = 0;
     this.currentResults = [];
     this.curOffset = null;
+    this.settingsOpen = false;
     this.undoStack = [];
     this.redoStack = [];
     this.visible = false;
@@ -30,6 +35,8 @@ export class SearchNavigation extends ComfyDialog {
         onkeydown: (e) => {
           if (e.key === "Enter") {
             this.enterHandler();
+          } else if (e.key === "Escape") {
+            this.show();
           } else if (e.key === "ArrowDown") {
             this.incrementSelectionIndex(1);
           } else if (e.key === "ArrowUp") {
@@ -41,7 +48,7 @@ export class SearchNavigation extends ComfyDialog {
           top: "0",
           left: "0",
           transform: "translateX(-50%) translateY(-100%)",
-          width: `${NAV_WIDTH}vw`,
+          width: `${this.config.NAV_WIDTH}vw`,
           // Default background color with increased elevation.
           backgroundColor: "rgba(53, 53, 53, .48)",
           boxShadow:
@@ -57,23 +64,33 @@ export class SearchNavigation extends ComfyDialog {
       },
       [
         $el("table.comfy-modal-content.comfy-table", [
-          $el(
-            "caption",
-            { textContent: "Search Navigation" },
+          $el("caption", { textContent: "Search Navigation" }, [
             $el("button.comfy-btn", {
               type: "button",
+              style: {},
               textContent: "\u00d7",
               onclick: () => {
                 this.show();
               },
-            })
-          ),
+            }),
+            $el("button.comfy-btn", {
+              type: "button",
+              style: {
+                transform: "translateX(-2rem)",
+              },
+              textContent: "\u2699",
+              onclick: () => {
+                this.toggleSettings();
+              },
+            }),
+          ]),
           $el("input", {
             type: "text",
             id: "searchInput",
             placeholder: "Search Nodes...",
             style: {
               marginBottom: ".5rem",
+              marginTop: ".1rem",
             },
             oninput: () => {
               this.selectedResultIndex = 0;
@@ -86,15 +103,42 @@ export class SearchNavigation extends ComfyDialog {
       ]
     );
 
-    window.addEventListener("keyup", (e) => {
-      if (e.shiftKey && e.key === OPEN_SEARCH_HOTKEY) {
-        this.show();
-      }
-      else if (this.visible && e.shiftKey && e.key === FOCUS_SEARCH_INPUT_HOTKEY) {
-        console.log("focus search input");
-        this.focusSearchInput();
-      }
+    window.addEventListener("keydown", (e) => {
+      this.keydownEventFilter(e, false, true, (e) => {
+        if (this.equalsHotkey(this.config.OPEN_SEARCH_HOTKEY, e)) {
+          this.show();
+          e.preventDefault();
+        }
+      });
+      this.keydownEventFilter(e, true, true, (e) => {
+        if (this.equalsHotkey(this.config.FOCUS_SEARCH_INPUT_HOTKEY, e)) {
+          this.focusSearchInput();
+        }
+      });
+      this.keydownEventFilter(
+        e,
+        !this.config.UNDOREDO_NAVIGATION_WHEN_CLOSED,
+        document.activeElement &&
+          document.activeElement !== this.getSearchInputEl(),
+        (e) => {
+          if (this.equalsHotkey(this.config.UNDO_HOTKEY, e)) {
+            this.undo();
+          } else if (this.equalsHotkey(this.config.REDO_HOTKEY, e)) {
+            this.redo();
+          }
+        }
+      );
     });
+  }
+
+  equalsHotkey(hotkey, e) {
+    const parts = hotkey.toLowerCase().split("+");
+    let key = parts.pop();
+    let modifiers = parts.map((modifier) => modifier.trim());
+    return (
+      key === e.key.toLowerCase() &&
+      modifiers.every((modifier) => e[`${modifier}Key`])
+    );
   }
 
   getGraphState() {
@@ -157,10 +201,14 @@ export class SearchNavigation extends ComfyDialog {
     this.currentResults.forEach((result, index) => {
       const tr = $el("tr", [
         $el("td", { textContent: result.type }),
-        $el("td", { textContent: result.id }),
-        $el("td", { textContent: result.title }),
-        $el("td", { textContent: result.properties["Node name for S&R"] }),
+        // $el("td", { textContent: result.properties["Node name for S&R"] }),
       ]);
+      if ("title" in result) {
+        tr.appendChild($el("td", { textContent: result.title }));
+      }
+      if (this.config.SHOW_NODE_IDS) {
+        tr.appendChild($el("td", { textContent: result.id }));
+      }
       if (index === this.selectedResultIndex) {
         // Selected row color.
         tr.style.backgroundColor = "rgba(9, 71, 113, 0.78)";
@@ -199,7 +247,7 @@ export class SearchNavigation extends ComfyDialog {
   }
 
   searchNodes(searchText) {
-    if (searchText === "" && !ALLOW_EMPTY_SEARCH) {
+    if (searchText === "" && !this.config.ALLOW_EMPTY_SEARCH) {
       this.currentResults = [];
       return;
     }
@@ -233,6 +281,20 @@ export class SearchNavigation extends ComfyDialog {
     return results;
   }
 
+  keydownEventFilter(e, disableWhenHidden, disableWhenTextArea, callback) {
+    if (
+      (disableWhenHidden && !this.visible) ||
+      (disableWhenTextArea &&
+        document.activeElement &&
+        (document.activeElement instanceof HTMLTextAreaElement ||
+          document.activeElement instanceof HTMLInputElement ||
+          document.activeElement === this.getSearchInputEl()))
+    ) {
+      return false;
+    }
+    return callback(e);
+  }
+
   getSearchInputEl() {
     return document.getElementById("searchInput");
   }
@@ -247,48 +309,96 @@ export class SearchNavigation extends ComfyDialog {
     this.getSearchInputEl().focus();
   }
 
-  undoRedoListener(e) {
-    if (!this.visible) return;
-
-    if (e.shiftKey && e.key === UNDO_HOTKEY) {
-      this.undo();
-    } else if (e.shiftKey && e.key === REDO_HOTKEY) {
-      this.redo();
-    }
-  }
-
-  addUndoRedoHotkeyListeners() {
-    // Ensure we remove any existing listener before adding a new one.
-    if (this.undoRedoListenerRef) {
-      this.removeUndoRedoHotkeyListeners();
-    }
-
-    const listener = this.undoRedoListener.bind(this);
-    window.addEventListener("keyup", listener);
-    this.undoRedoListenerRef = listener; // Store the bound listener reference
-  }
-
-  removeUndoRedoHotkeyListeners() {
-    if (this.undoRedoListenerRef) {
-      window.removeEventListener("keyup", this.undoRedoListenerRef);
-      this.undoRedoListenerRef = null;
-    }
-  }
-
   show() {
     if (this.visible) {
       this.element.classList.remove("search-navigation-show");
       this.element.close();
-      this.removeUndoRedoHotkeyListeners(); // Remove listeners when hidden
     } else {
       this.element.classList.add("search-navigation-show");
       this.element.show();
-      this.addUndoRedoHotkeyListeners(); // Add listeners when shown
       this.focusSearchInput();
-      // Clear existing search results when shown.
       this.clearSearchInput();
     }
     this.visible = !this.visible;
+  }
+
+  toggleSettings() {
+    if (this.settingsOpen) {
+      this.textElement.innerHTML = "";
+    } else {
+      this.openSettings();
+    }
+    this.settingsOpen = !this.settingsOpen;
+  }
+
+  reRenderSettings() {
+    this.textElement.innerHTML = "";
+    this.openSettings();
+  }
+
+  openSettings() {
+    this.clearSearchInput();
+    const settingsRow = $el("tr", {
+      style: {
+        display: "grid",
+        gridTemplateColumns:
+          this.config.NAV_WIDTH >= 80
+            ? "repeat(3, 1fr)"
+            : this.config.NAV_WIDTH >= 50
+            ? "repeat(2, 1fr)"
+            : "1fr",
+        gap: "1rem",
+      },
+    });
+
+    for (let [key, value] of Object.entries(this.config)) {
+      const cell = $el("td", {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: this.config.NAV_WIDTH >= 40 ? ".8rem" : ".64rem",
+        },
+      });
+
+      cell.appendChild($el("label", { textContent: key, style: {} }));
+
+      const input = $el("input", {
+        type:
+          typeof value === "boolean"
+            ? "checkbox"
+            : typeof value === "number"
+            ? "number"
+            : "text",
+        value,
+        oninput: (e) => {
+          if (
+            key == "NAV_WIDTH" &&
+            !isNaN(parseInt(e.target.value)) &&
+            parseInt(e.target.value) >= 10
+          ) {
+            let oldValue = parseInt(this.config[key]);
+            this.element.style.width =
+              parseInt(e.target.value) >= 10 ? `${e.target.value}vw` : "70vw"; // Default width so doesn't get too small when changing via keyboard.
+
+            if (Math.abs(parseInt(e.target.value) - oldValue) >= 10) {
+              this.config[key] = parseInt(e.target.value);
+              this.reRenderSettings();
+            }
+          } else if (typeof value === "boolean") {
+            this.config[key] = e.target.checked;
+          } else if (key !== "NAV_WIDTH") {
+            this.config[key] = e.target.value;
+          }
+        },
+      });
+      if (typeof value === "boolean") {
+        input.checked = value;
+      }
+      cell.appendChild(input);
+      settingsRow.appendChild(cell);
+    }
+
+    this.textElement.appendChild(settingsRow);
   }
 }
 
